@@ -75,13 +75,22 @@ class OpenAIProvider(LLMProvider):
                 media_type="text/event-stream",
             )
 
-        response_content = await self.response_config.get_response_with_lag(
+        payload = await self.response_config.get_response_payload_with_lag(
             headers, body
         )
+        response_content = payload.content
 
-        prompt_tokens = count_tokens(str(request.messages), request.model)
-        completion_tokens = count_tokens(response_content, request.model)
-        total_tokens = prompt_tokens + completion_tokens
+        if payload.usage is None:
+            prompt_tokens = count_tokens(str(request.messages), request.model)
+            completion_tokens = count_tokens(response_content, request.model)
+            total_tokens = prompt_tokens + completion_tokens
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+        else:
+            usage = payload.usage
 
         return OpenAIChatResponse(
             model=request.model,
@@ -92,9 +101,5 @@ class OpenAIProvider(LLMProvider):
                     "finish_reason": "stop",
                 }
             ],
-            usage={
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-            },
+            usage=usage,
         ).model_dump()

@@ -21,7 +21,9 @@ def get_response(headers: Dict[str, Any], body: Dict[str, Any]) -> str:
         body: Request body dict (e.g., {"model": "gpt-4", "messages": [...]})
 
     Returns:
-        Response string to return to the client.
+        Response string to return to the client, or a tuple of
+        (response, usage) to override the usage object. Usage format depends
+        on the endpoint (OpenAI vs Anthropic) and may include nested fields.
 
     Examples:
         # Access the model name
@@ -83,3 +85,15 @@ def example():
 
     # Default response
     return f"Mock response for model '{model}': {user_message}"
+
+
+# Example: Override usage (uncomment to use)
+# def get_response(headers: Dict[str, Any], body: Dict[str, Any]):
+#     response = "Hello from the module!"
+#     usage = {
+#         "prompt_tokens": 5,
+#         "completion_tokens": 7,
+#         "total_tokens": 12,
+#         "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+#     }
+#     return (response, usage)

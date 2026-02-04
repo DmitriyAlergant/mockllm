@@ -185,3 +185,30 @@ def get_response(headers, body):
     finally:
         Path(module_path).unlink()
         Path(yaml_path).unlink()
+
+
+def test_module_response_with_usage():
+    """Test that module can return usage along with content."""
+    from mockllm.config import ResponseConfig
+
+    module_content = '''
+def get_response(headers, body):
+    return ("module-response", {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3})
+'''
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False
+    ) as f:
+        f.write(module_content)
+        module_path = f.name
+
+    try:
+        config = ResponseConfig(module_path=module_path)
+        payload = config.get_response_payload(headers={}, body={})
+        assert payload.content == "module-response"
+        assert payload.usage == {
+            "prompt_tokens": 1,
+            "completion_tokens": 2,
+            "total_tokens": 3,
+        }
+    finally:
+        Path(module_path).unlink()

@@ -60,29 +60,49 @@ def test_anthropic_chat_completion():
 
 
 def test_openai_streaming():
-    response = client.post(
-        "/v1/chat/completions",
-        json={
-            "model": "mock-llm",
-            "messages": [{"role": "user", "content": "test message"}],
-            "stream": True,
-        },
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
+    async def fake_stream(headers, body, chunk_size=None):
+        for chunk in ["A", "B"]:
+            yield chunk
+
+    with patch(
+        "mockllm.server.response_config.get_streaming_response_with_lag",
+        new=fake_stream,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "mock-llm",
+                "messages": [{"role": "user", "content": "test message"}],
+                "stream": True,
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert '"content":"A"' in response.text
+        assert '"content":"B"' in response.text
 
 
 def test_anthropic_streaming():
-    response = client.post(
-        "/v1/messages",
-        json={
-            "model": "claude-3-sonnet-20240229",
-            "messages": [{"role": "user", "content": "test message"}],
-            "stream": True,
-        },
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+    async def fake_stream(headers, body, chunk_size=None):
+        for chunk in ["A", "B"]:
+            yield chunk
+
+    with patch(
+        "mockllm.server.response_config.get_streaming_response_with_lag",
+        new=fake_stream,
+    ):
+        response = client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-3-sonnet-20240229",
+                "messages": [{"role": "user", "content": "test message"}],
+                "stream": True,
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert '"text":"A"' in response.text
+        assert '"text":"B"' in response.text
 
 
 def test_invalid_request():
@@ -94,14 +114,16 @@ def test_invalid_request():
 
 def test_openai_with_authorization_header():
     """Test that authorization headers are passed through."""
-    async def fake_get_response_with_lag(headers, body):
+    from mockllm.config import ResponsePayload
+
+    async def fake_get_response_payload_with_lag(headers, body):
         assert headers.get("authorization") == "Bearer test-token"
         assert body.get("model") == "mock-llm"
-        return "header-ok"
+        return ResponsePayload(content="header-ok")
 
     with patch(
-        "mockllm.server.response_config.get_response_with_lag",
-        new=fake_get_response_with_lag,
+        "mockllm.server.response_config.get_response_payload_with_lag",
+        new=fake_get_response_payload_with_lag,
     ):
         response = client.post(
             "/v1/chat/completions",
@@ -119,14 +141,16 @@ def test_openai_with_authorization_header():
 
 def test_anthropic_with_api_key_header():
     """Test that x-api-key headers are passed through."""
-    async def fake_get_response_with_lag(headers, body):
+    from mockllm.config import ResponsePayload
+
+    async def fake_get_response_payload_with_lag(headers, body):
         assert headers.get("x-api-key") == "test-api-key"
         assert body.get("model") == "claude-3-sonnet-20240229"
-        return "header-ok"
+        return ResponsePayload(content="header-ok")
 
     with patch(
-        "mockllm.server.response_config.get_response_with_lag",
-        new=fake_get_response_with_lag,
+        "mockllm.server.response_config.get_response_payload_with_lag",
+        new=fake_get_response_payload_with_lag,
     ):
         response = client.post(
             "/v1/messages",

@@ -57,7 +57,8 @@ def get_response(headers: dict, body: dict) -> str:
         body: Request body dict (e.g., {"model": "gpt-4", "messages": [...]})
 
     Returns:
-        Response string to return to client
+        Response string to return to client, or a tuple of
+        `(response, usage)` to override the usage object.
     """
     # Extract the user's message
     messages = body.get("messages", [])
@@ -74,6 +75,34 @@ def get_response(headers: dict, body: dict) -> str:
 ```
 
 See `example_response_module.py` for a complete example.
+
+You can also override the usage object by returning a tuple. Use the format that
+matches the endpoint you're calling (OpenAI and Anthropic differ, and nested
+fields are allowed):
+
+```python
+def get_response(headers: dict, body: dict):
+    response = "Hello from the module!"
+
+    # OpenAI usage format (example)
+    openai_usage = {
+        "prompt_tokens": 5,
+        "completion_tokens": 7,
+        "total_tokens": 12,
+        "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+    }
+
+    # Anthropic usage format (example)
+    anthropic_usage = {
+        "input_tokens": 5,
+        "output_tokens": 7,
+        "cache_creation": {"ephemeral_1h_input_tokens": 0},
+        "service_tier": "standard",
+    }
+
+    # Return the usage format that matches the endpoint you are calling
+    return (response, openai_usage)
+```
 
 ### Network Lag Simulation
 

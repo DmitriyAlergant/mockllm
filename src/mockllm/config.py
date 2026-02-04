@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, AsyncGenerator, Callable, Dict, Generator, Optional, cast
@@ -18,6 +19,13 @@ logging.basicConfig(level=logging.INFO, handlers=[log_handler])
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ResponsePayload:
+    content: str
+    usage: Optional[Dict[str, Any]] = None
+    reasoning: Optional[str] = None
+
+
 class ResponseConfig:
     """Handles loading and managing response configurations from YAML or module."""
 
@@ -29,7 +37,7 @@ class ResponseConfig:
         self.yaml_path: Optional[str] = None
         self.response_module: Optional[ModuleType] = None
         self.module_get_response: Optional[
-            Callable[[Dict[str, Any], Dict[str, Any]], str]
+            Callable[[Dict[str, Any], Dict[str, Any]], Any]
         ] = None
 
         # Explicit args override environment variables
@@ -139,14 +147,65 @@ class ResponseConfig:
         Returns:
             Response string to return to client
         """
+        payload = self.get_response_payload(headers, body)
+        return payload.content
+
+    def get_response_payload(
+        self, headers: Dict[str, Any], body: Dict[str, Any]
+    ) -> ResponsePayload:
+        """Get response payload for a given request.
+
+        Args:
+            headers: HTTP headers dict (e.g., {"authorization": "Bearer ..."})
+            body: Request body dict (e.g., {"model": "gpt-4", "messages": [...]})
+
+        Returns:
+            ResponsePayload with content and optional usage/reasoning.
+        """
         if self.module_get_response is not None:
             # Use custom module
-            return self.module_get_response(headers, body)
+            return self._normalize_module_response(
+                self.module_get_response(headers, body)
+            )
 
         # Use YAML config - extract prompt from body
         self.load_responses()  # Check for updates
         prompt = self._extract_prompt(body)
-        return self.responses.get(prompt, self.default_response)
+        return ResponsePayload(content=self.responses.get(prompt, self.default_response))
+
+    def _normalize_module_response(self, result: Any) -> ResponsePayload:
+        """Normalize module responses to ResponsePayload."""
+        if isinstance(result, ResponsePayload):
+            return result
+
+        if isinstance(result, str):
+            return ResponsePayload(content=result)
+
+        if isinstance(result, (tuple, list)):
+            if len(result) == 2:
+                content, usage = result
+                reasoning = None
+            elif len(result) == 3:
+                content, reasoning, usage = result
+            else:
+                raise ValueError(
+                    "get_response must return a string, "
+                    "a (content, usage) tuple, or a (content, reasoning, usage) tuple"
+                )
+
+            if not isinstance(content, str):
+                raise ValueError("response content must be a string")
+            if reasoning is not None and not isinstance(reasoning, str):
+                raise ValueError("reasoning must be a string when provided")
+            if usage is not None and not isinstance(usage, dict):
+                raise ValueError("usage must be a dict when provided")
+
+            return ResponsePayload(content=content, reasoning=reasoning, usage=usage)
+
+        raise ValueError(
+            "get_response must return a string, "
+            "a (content, usage) tuple, or a (content, reasoning, usage) tuple"
+        )
 
     def _extract_prompt(self, body: Dict[str, Any]) -> str:
         """Extract the user prompt from the request body."""
@@ -186,12 +245,19 @@ class ResponseConfig:
         self, headers: Dict[str, Any], body: Dict[str, Any]
     ) -> str:
         """Get response with artificial lag for non-streaming responses."""
-        response = self.get_response(headers, body)
+        payload = await self.get_response_payload_with_lag(headers, body)
+        return payload.content
+
+    async def get_response_payload_with_lag(
+        self, headers: Dict[str, Any], body: Dict[str, Any]
+    ) -> ResponsePayload:
+        """Get response payload with artificial lag for non-streaming responses."""
+        payload = self.get_response_payload(headers, body)
         if self.lag_enabled:
             # Base delay on response length and lag factor
-            delay = len(response) / (self.lag_factor * 10)
+            delay = len(payload.content) / (self.lag_factor * 10)
             await asyncio.sleep(delay)
-        return response
+        return payload
 
     async def get_streaming_response_with_lag(
         self,

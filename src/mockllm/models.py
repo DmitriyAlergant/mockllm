@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,7 +54,7 @@ class OpenAIChatResponse(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str
     choices: List[Dict]
-    usage: Dict[str, int]
+    usage: Dict[str, Any]
 
 
 class OpenAIStreamResponse(BaseModel):
@@ -95,7 +95,7 @@ class AnthropicChatResponse(BaseModel):
     content: List[Dict[str, str]]
     stop_reason: Optional[str] = "end_turn"
     stop_sequence: Optional[str] = None
-    usage: Dict[str, int]
+    usage: Dict[str, Any]
 
 
 class AnthropicStreamDelta(BaseModel):
@@ -112,7 +112,7 @@ class AnthropicStreamResponse(BaseModel):
     type: str = "message_delta"
     id: str = Field(default_factory=lambda: f"mock-{uuid.uuid4()}")
     delta: AnthropicStreamDelta
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Any]] = None
 
 
 # For backward compatibility
