@@ -90,3 +90,53 @@ def test_invalid_request():
         "/v1/chat/completions", json={"model": "mock-llm", "messages": []}
     )
     assert response.status_code == 500
+
+
+def test_openai_with_authorization_header():
+    """Test that authorization headers are passed through."""
+    async def fake_get_response_with_lag(headers, body):
+        assert headers.get("authorization") == "Bearer test-token"
+        assert body.get("model") == "mock-llm"
+        return "header-ok"
+
+    with patch(
+        "mockllm.server.response_config.get_response_with_lag",
+        new=fake_get_response_with_lag,
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "mock-llm",
+                "messages": [{"role": "user", "content": "test message"}],
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["object"] == "chat.completion"
+        assert data["choices"][0]["message"]["content"] == "header-ok"
+
+
+def test_anthropic_with_api_key_header():
+    """Test that x-api-key headers are passed through."""
+    async def fake_get_response_with_lag(headers, body):
+        assert headers.get("x-api-key") == "test-api-key"
+        assert body.get("model") == "claude-3-sonnet-20240229"
+        return "header-ok"
+
+    with patch(
+        "mockllm.server.response_config.get_response_with_lag",
+        new=fake_get_response_with_lag,
+    ):
+        response = client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-3-sonnet-20240229",
+                "messages": [{"role": "user", "content": "test message"}],
+            },
+            headers={"x-api-key": "test-api-key"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "message"
+        assert data["content"][0]["text"] == "header-ok"

@@ -7,7 +7,7 @@
 
 An LLM simulator that mimics OpenAI and Anthropic API formats. Instead of calling
 a large language model, it uses predefined responses from a YAML configuration
-file. 
+file or a custom Python module.
 
 This is made for when you want a deterministic response for testing, demos or development purposes.
 
@@ -15,15 +15,16 @@ This is made for when you want a deterministic response for testing, demos or de
 
 - OpenAI and Anthropic compatible API endpoints
 - Streaming support (character-by-character response streaming)
-- Configurable responses via YAML file
+- Configurable responses via YAML file or custom Python module
 - Hot-reloading of response configurations
 - Mock token counting
+- Custom response modules for complex matching logic
 
 ## Configuration
 
-### Response Configuration
+### Response Configuration (YAML)
 
-Responses are configured in `responses.yml`. The file has three main sections:
+Responses can be configured in a YAML file. The file has three main sections:
 
 1. `responses`: Maps input prompts to predefined responses
 2. `defaults`: Contains default configurations like the unknown response message
@@ -44,6 +45,36 @@ settings:
   lag_factor: 10  # Higher values = faster responses (10 = fast, 1 = slow)
 ```
 
+### Custom Response Module
+
+For more complex matching logic, you can use a custom Python module. The module must implement a `get_response` function:
+
+```python
+def get_response(headers: dict, body: dict) -> str:
+    """
+    Args:
+        headers: HTTP headers dict (e.g., {"authorization": "Bearer ..."})
+        body: Request body dict (e.g., {"model": "gpt-4", "messages": [...]})
+
+    Returns:
+        Response string to return to client
+    """
+    # Extract the user's message
+    messages = body.get("messages", [])
+    user_message = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+        ""
+    )
+
+    # Implement your custom logic
+    if "hello" in user_message.lower():
+        return "Hello! How can I help you?"
+
+    return "This is a mock response."
+```
+
+See `example_response_module.py` for a complete example.
+
 ### Network Lag Simulation
 
 The server can simulate network latency for more realistic testing scenarios. This is controlled by two settings:
@@ -58,7 +89,7 @@ For streaming responses, the lag is applied per-character with slight random var
 
 ### Hot Reloading
 
-The server automatically detects changes to `responses.yml` and reloads the configuration without restarting the server.
+The server automatically detects changes to the YAML config file and reloads the configuration without restarting the server.
 
 ## Installation
 
@@ -104,15 +135,41 @@ mockllm --version
 # Start the server with default settings
 mockllm start
 
-# Start with custom responses file
-mockllm start --responses custom_responses.yml
+# Start with a config file
+mockllm start --config responses.yml
+
+# Start with a custom response module
+mockllm start --response-module my_responses.py
 
 # Start with custom host and port
 mockllm start --host localhost --port 3000
 
-# Validate a responses file
+# Validate a config file
 mockllm validate responses.yml
+
+# Validate a response module
+mockllm validate my_responses.py
 ```
+
+#### CLI Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--config` | `-c` | Path to config YAML file |
+| `--response-module` | `-m` | Path to custom Python response module |
+| `--host` | `-h` | Host to bind to (default: 0.0.0.0) |
+| `--port` | `-p` | Port to bind to (default: 8000) |
+| `--reload` | | Enable auto-reload on file changes |
+
+Note: `--responses` is still supported as a legacy alias for `--config`.
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `MOCKLLM_CONFIG_FILE` | Path to config YAML file |
+| `MOCKLLM_RESPONSE_MODULE` | Path to custom Python response module |
+| `MOCKLLM_RESPONSES_FILE` | Legacy: Path to responses YAML file |
 
 ### Quick Start
 
@@ -121,17 +178,35 @@ mockllm validate responses.yml
 cp example.responses.yml responses.yml
 ```
 
-2. Validate your responses file (optional):
+2. Validate your config file (optional):
 ```bash
 mockllm validate responses.yml
 ```
 
 3. Start the server:
 ```bash
-mockllm start --responses responses.yml
+mockllm start --config responses.yml
 ```
 
 The server will start on `http://localhost:8000` by default.
+
+### Using a Custom Response Module
+
+1. Create your response module:
+```bash
+cp example_response_module.py my_responses.py
+# Edit my_responses.py to implement your logic
+```
+
+2. Validate the module:
+```bash
+mockllm validate my_responses.py
+```
+
+3. Start the server:
+```bash
+mockllm start --response-module my_responses.py
+```
 
 ### API Endpoints
 

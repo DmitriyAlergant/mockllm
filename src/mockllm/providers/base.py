@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 class LLMProvider(ABC):
     @abstractmethod
     async def handle_chat_completion(
-        self, request: Any
+        self, request: Any, headers: Dict[str, Any]
     ) -> Union[Dict[str, Any], StreamingResponse]:
         pass
 

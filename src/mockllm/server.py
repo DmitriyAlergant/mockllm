@@ -2,7 +2,7 @@ import logging
 from typing import Any, AsyncGenerator, Dict, Union
 
 import tiktoken
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pythonjsonlogger.json import JsonFormatter
 
@@ -41,6 +41,11 @@ def count_tokens(text: str, model: str) -> int:
         return len(text.split())
 
 
+def extract_headers(request: Request) -> Dict[str, Any]:
+    """Extract headers from request as a dict."""
+    return dict(request.headers)
+
+
 async def openai_stream_response(content: str, model: str) -> AsyncGenerator[str, None]:
     """Generate OpenAI-style streaming response in SSE format."""
     first_chunk = OpenAIStreamResponse(
@@ -50,7 +55,7 @@ async def openai_stream_response(content: str, model: str) -> AsyncGenerator[str
     yield f"data: {first_chunk.model_dump_json()}\n\n"
 
     # Stream the content character by character with lag
-    async for chunk in response_config.get_streaming_response_with_lag(content):
+    async for chunk in response_config.get_streaming_response_with_lag({}, {}):
         chunk_response = OpenAIStreamResponse(
             model=model,
             choices=[OpenAIStreamChoice(delta=OpenAIDeltaMessage(content=chunk))],
@@ -70,7 +75,7 @@ async def anthropic_stream_response(
     content: str, model: str
 ) -> AsyncGenerator[str, None]:
     """Generate Anthropic-style streaming response in SSE format."""
-    async for chunk in response_config.get_streaming_response_with_lag(content):
+    async for chunk in response_config.get_streaming_response_with_lag({}, {}):
         stream_response = AnthropicStreamResponse(
             delta=AnthropicStreamDelta(delta={"text": chunk})
         )
@@ -82,6 +87,7 @@ async def anthropic_stream_response(
 @app.post("/v1/chat/completions", response_model=None)
 async def openai_chat_completion(
     request: OpenAIChatRequest,
+    raw_request: Request,
 ) -> Union[Dict[str, Any], StreamingResponse]:
     """Handle OpenAI chat completion requests"""
     try:
@@ -93,7 +99,8 @@ async def openai_chat_completion(
                 "stream": request.stream,
             },
         )
-        return await openai_provider.handle_chat_completion(request)
+        headers = extract_headers(raw_request)
+        return await openai_provider.handle_chat_completion(request, headers)
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(
@@ -104,6 +111,7 @@ async def openai_chat_completion(
 @app.post("/v1/messages", response_model=None)
 async def anthropic_chat_completion(
     request: AnthropicChatRequest,
+    raw_request: Request,
 ) -> Union[Dict[str, Any], StreamingResponse]:
     """Handle Anthropic chat completion requests"""
     try:
@@ -115,7 +123,8 @@ async def anthropic_chat_completion(
                 "stream": request.stream,
             },
         )
-        return await anthropic_provider.handle_chat_completion(request)
+        headers = extract_headers(raw_request)
+        return await anthropic_provider.handle_chat_completion(request, headers)
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(

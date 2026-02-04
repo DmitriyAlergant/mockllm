@@ -1,4 +1,4 @@
-from typing import Any, AsyncGenerator, Dict, Union
+from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -19,11 +19,17 @@ class AnthropicProvider(LLMProvider):
         self.response_config = response_config
 
     async def generate_stream_response(
-        self, content: str, model: str
+        self,
+        content: str,
+        model: str,
+        headers: Optional[Dict[str, Any]] = None,
+        body: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
-        async for chunk in self.response_config.get_streaming_response_with_lag(
-            content
-        ):
+        # Use headers and body if provided, otherwise create empty dicts
+        h = headers or {}
+        b = body or {}
+
+        async for chunk in self.response_config.get_streaming_response_with_lag(h, b):
             stream_response = AnthropicStreamResponse(
                 delta=AnthropicStreamDelta(delta={"text": chunk})
             )
@@ -32,7 +38,7 @@ class AnthropicProvider(LLMProvider):
         yield "data: [DONE]\n\n"
 
     async def handle_chat_completion(
-        self, request: AnthropicChatRequest
+        self, request: AnthropicChatRequest, headers: Dict[str, Any]
     ) -> Union[Dict[str, Any], StreamingResponse]:
         last_message = next(
             (msg for msg in reversed(request.messages) if msg.role == "user"), None
@@ -43,14 +49,19 @@ class AnthropicProvider(LLMProvider):
                 status_code=400, detail="No user message found in request"
             )
 
+        # Convert request to dict for the response module
+        body = request.model_dump()
+
         if request.stream:
             return StreamingResponse(
-                self.generate_stream_response(last_message.content, request.model),
+                self.generate_stream_response(
+                    last_message.content, request.model, headers, body
+                ),
                 media_type="text/event-stream",
             )
 
         response_content = await self.response_config.get_response_with_lag(
-            last_message.content
+            headers, body
         )
 
         prompt_tokens = count_tokens(str(request.messages), request.model)
